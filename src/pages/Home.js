@@ -1,0 +1,793 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import '../App.css';
+import imgCoverage from '../assets/bg1.jpg';
+import imgRealtime from '../assets/bg3.jpg';
+import imgFriction from '../assets/bg2.jpg';
+
+/* ------------------------------------------------------------------ */
+/*  CONFIG + HELPERS                                                  */
+/* ------------------------------------------------------------------ */
+const PARCELS_URL = 'https://sheetdb.io/api/v1/hw2ce8n9rooe3';
+
+const statusColors = {
+  delivered: '#22c55e',
+  out_for_delivery: '#FF5230',
+  in_transit: '#FF5230',
+  pending: '#a1a1aa',
+  exception: '#ef4444',
+};
+
+const statusLabels = {
+  delivered: 'Delivered',
+  out_for_delivery: 'Out for delivery',
+  in_transit: 'In transit',
+  pending: 'Pending',
+  exception: 'Exception',
+};
+
+const STATUS_STEPS = [
+  { key: 'pending', label: 'Pending' },
+  { key: 'in_transit', label: 'In transit' },
+  { key: 'out_for_delivery', label: 'Out for delivery' },
+  { key: 'delivered', label: 'Delivered' },
+];
+
+const normalizeParcelRow = (r) => {
+  const status = (r.status || 'pending').toLowerCase();
+  return {
+    number: r.tracking_number || '',
+    status,
+    label: statusLabels[status] || 'Pending',
+    courier: r.courier || '—',
+    from: r.from_location || '—',
+    to: r.to_location || '—',
+    eta: r.arrives_thru || '—',
+  };
+};
+
+/* ------------------------------------------------------------------ */
+/*  MODAL                                                             */
+/* ------------------------------------------------------------------ */
+const ParcelModal = ({ parcel, onClose }) => {
+  const [copied, setCopied] = useState(false);
+
+  const color = statusColors[parcel.status] || '#a1a1aa';
+  const isException = parcel.status === 'exception';
+  const activeIndex = STATUS_STEPS.findIndex((s) => s.key === parcel.status);
+  const etaParts = (parcel.eta || '').split(',');
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(parcel.number);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      /* clipboard not available */
+    }
+  };
+
+  return createPortal(
+    <div className="pm-backdrop" onClick={onClose} role="presentation">
+      <div
+        className="pm-card"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Parcel ${parcel.number}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <style>{`
+          .pm-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.25rem;
+            background: rgba(14,14,16,0.45);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            animation: pmFade 0.22s ease;
+          }
+          .pm-card {
+            position: relative;
+            width: 100%;
+            max-width: 520px;
+            max-height: 90vh;
+            overflow-y: auto;
+            background: #fff;
+            border-radius: 26px;
+            box-shadow: 0 40px 90px -32px rgba(14,14,16,0.55);
+            animation: pmPop 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+          }
+          @keyframes pmFade { from { opacity: 0; } to { opacity: 1; } }
+          @keyframes pmPop {
+            from { opacity: 0; transform: translateY(18px) scale(0.965); }
+            to   { opacity: 1; transform: none; }
+          }
+
+          .pm-hero {
+            position: relative;
+            overflow: hidden;
+            padding: 1.6rem 1.6rem 1.5rem;
+            border-radius: 26px 26px 0 0;
+          }
+          .pm-hero::after {
+            content: '';
+            position: absolute;
+            top: -70px; right: -70px;
+            width: 200px; height: 200px;
+            border-radius: 50%;
+            background: currentColor;
+            opacity: 0.07;
+            pointer-events: none;
+          }
+          .pm-hero-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1rem;
+            position: relative;
+            z-index: 1;
+          }
+          .pm-hero-icon {
+            width: 52px; height: 52px;
+            border-radius: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            box-shadow: 0 8px 20px -10px rgba(14,14,16,0.25);
+            flex-shrink: 0;
+          }
+          .pm-close {
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(255,255,255,0.75);
+            color: #0E0E10;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: background 0.2s ease, transform 0.2s ease;
+          }
+          .pm-close:hover { background: #fff; transform: rotate(90deg); }
+
+          .pm-eyebrow {
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #71717A;
+            margin: 1.15rem 0 0.4rem;
+            position: relative;
+            z-index: 1;
+          }
+          .pm-number {
+            font-family: 'SF Mono', Menlo, Consolas, monospace;
+            font-size: 1.3rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: #0E0E10;
+            word-break: break-all;
+            line-height: 1.25;
+            position: relative;
+            z-index: 1;
+          }
+          .pm-status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            margin-top: 0.85rem;
+            padding: 0.35rem 0.85rem;
+            border-radius: 100px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            position: relative;
+            z-index: 1;
+          }
+          .pm-status-pill .dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+          }
+
+          .pm-body { padding: 1.5rem 1.6rem 1.6rem; }
+
+          .pm-track {
+            display: flex;
+            margin-bottom: 1.6rem;
+          }
+          .pm-track-item {
+            flex: 1;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            text-align: center;
+          }
+          .pm-track-item::before {
+            content: '';
+            position: absolute;
+            top: 11px;
+            left: -50%;
+            width: 100%;
+            height: 2px;
+            background: #E7E5E1;
+            transition: background 0.3s ease;
+          }
+          .pm-track-item:first-child::before { display: none; }
+          .pm-track-item.is-done::before { background: #FF5230; }
+
+          .pm-track-dot {
+            position: relative;
+            z-index: 1;
+            width: 24px; height: 24px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            border: 2px solid #E7E5E1;
+            color: #A1A1AA;
+            font-size: 0.65rem;
+            font-weight: 700;
+            transition: all 0.3s ease;
+          }
+          .pm-track-item.is-done .pm-track-dot {
+            background: #FF5230;
+            border-color: #FF5230;
+            color: #fff;
+          }
+          .pm-track-item.is-current .pm-track-dot {
+            box-shadow: 0 0 0 5px rgba(255,82,48,0.15);
+          }
+          .pm-track-label {
+            font-size: 0.68rem;
+            font-weight: 600;
+            color: #A1A1AA;
+            line-height: 1.3;
+          }
+          .pm-track-item.is-done .pm-track-label { color: #0E0E10; }
+
+          .pm-exception {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            padding: 0.9rem 1rem;
+            border-radius: 14px;
+            background: rgba(239,68,68,0.08);
+            border: 1px solid rgba(239,68,68,0.2);
+            color: #b91c1c;
+            font-size: 0.83rem;
+            line-height: 1.45;
+            margin-bottom: 1.6rem;
+          }
+
+          .pm-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1px;
+            background: rgba(14,14,16,0.07);
+            border: 1px solid rgba(14,14,16,0.07);
+            border-radius: 16px;
+            overflow: hidden;
+          }
+          .pm-cell {
+            background: #fff;
+            padding: 0.95rem 1.05rem;
+          }
+          .pm-cell-label {
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.09em;
+            text-transform: uppercase;
+            color: #A1A1AA;
+            margin-bottom: 0.35rem;
+          }
+          .pm-cell-value {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #0E0E10;
+            line-height: 1.35;
+            word-break: break-word;
+          }
+          .pm-cell-value small {
+            display: block;
+            font-weight: 500;
+            font-size: 0.78rem;
+            color: #71717A;
+            margin-top: 0.15rem;
+          }
+
+          .pm-footer {
+            display: flex;
+            gap: 0.6rem;
+            margin-top: 1.5rem;
+          }
+          .pm-btn {
+            flex: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.45rem;
+            font-family: inherit;
+            font-size: 0.84rem;
+            font-weight: 600;
+            padding: 0.8rem 1.1rem;
+            border-radius: 100px;
+            cursor: pointer;
+            border: none;
+            transition: background 0.22s ease, transform 0.22s ease,
+                        color 0.22s ease, border-color 0.22s ease;
+          }
+          .pm-btn-ghost {
+            background: #fff;
+            border: 1px solid rgba(14,14,16,0.12);
+            color: #0E0E10;
+          }
+          .pm-btn-ghost:hover {
+            border-color: rgba(14,14,16,0.28);
+            transform: translateY(-1px);
+          }
+          .pm-btn-primary {
+            background: #FF5230;
+            color: #fff;
+          }
+          .pm-btn-primary:hover {
+            background: #ff3b14;
+            transform: translateY(-1px);
+          }
+
+          @media (max-width: 480px) {
+            .pm-grid { grid-template-columns: 1fr; }
+            .pm-track-label { font-size: 0.6rem; }
+            .pm-footer { flex-direction: column-reverse; }
+          }
+        `}</style>
+
+        {/* HERO */}
+        <div className="pm-hero" style={{ background: `${color}12`, color }}>
+          <div className="pm-hero-top">
+            <div className="pm-hero-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M16.5 9.4 7.55 4.24" />
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                <line x1="12" y1="22.08" x2="12" y2="12" />
+              </svg>
+            </div>
+
+            <button type="button" className="pm-close" onClick={onClose} aria-label="Close">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 6 6 18" />
+                <path d="m6 6 12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="pm-eyebrow">Tracking number</div>
+          <div className="pm-number">{parcel.number}</div>
+
+          <span className="pm-status-pill" style={{ color, background: `${color}22` }}>
+            <span className="dot" />
+            {parcel.label}
+          </span>
+        </div>
+
+        {/* BODY */}
+        <div className="pm-body">
+          {isException ? (
+            <div className="pm-exception">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <span>
+                There's an issue with this shipment. Please contact the courier
+                for more details.
+              </span>
+            </div>
+          ) : (
+            <div className="pm-track">
+              {STATUS_STEPS.map((step, i) => {
+                const isDone = activeIndex >= 0 && i <= activeIndex;
+                const isCurrent = i === activeIndex;
+                return (
+                  <div
+                    key={step.key}
+                    className={`pm-track-item${isDone ? ' is-done' : ''}${isCurrent ? ' is-current' : ''}`}
+                  >
+                    <div className="pm-track-dot">
+                      {i < activeIndex ? (
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      ) : (
+                        i + 1
+                      )}
+                    </div>
+                    <span className="pm-track-label">{step.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="pm-grid">
+            <div className="pm-cell">
+              <div className="pm-cell-label">Courier</div>
+              <div className="pm-cell-value">{parcel.courier}</div>
+            </div>
+            <div className="pm-cell">
+              <div className="pm-cell-label">Estimated arrival</div>
+              <div className="pm-cell-value">
+                {etaParts[0]}
+                {etaParts.length > 1 && (
+                  <small>{etaParts.slice(1).join(',').trim()}</small>
+                )}
+              </div>
+            </div>
+            <div className="pm-cell">
+              <div className="pm-cell-label">From</div>
+              <div className="pm-cell-value">{parcel.from}</div>
+            </div>
+            <div className="pm-cell">
+              <div className="pm-cell-label">To</div>
+              <div className="pm-cell-value">{parcel.to}</div>
+            </div>
+          </div>
+
+          <div className="pm-footer">
+            <button type="button" className="pm-btn pm-btn-ghost" onClick={handleCopy}>
+              {copied ? (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  Copied
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                  Copy number
+                </>
+              )}
+            </button>
+            <button type="button" className="pm-btn pm-btn-primary" onClick={onClose}>
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+};
+
+/* ------------------------------------------------------------------ */
+/*  FEATURES DATA                                                     */
+/* ------------------------------------------------------------------ */
+const features = [
+  {
+    tag: '01 — Coverage',
+    title: 'Every courier,\none inbox.',
+    text: 'DHL, FedEx, UPS, GIG, Kwik, Sendbox — hundreds of carriers piped into a single live view.',
+    img: imgCoverage,
+    span: 'wide',
+  },
+  {
+    tag: '02 — Real-Time',
+    title: 'Live as it moves.',
+    text: 'Every scan, every checkpoint, every delay — surfaced the second the courier posts it.',
+    img: imgRealtime,
+    span: 'tall',
+  },
+  {
+    tag: '03 — Zero Friction',
+    title: 'No sign-up. Ever.',
+    text: 'Paste a number. Get a truth. That is the entire experience.',
+    img: imgFriction,
+    span: 'normal',
+  },
+];
+
+/* ------------------------------------------------------------------ */
+/*  HOME                                                              */
+/* ------------------------------------------------------------------ */
+const Home = () => {
+  const [trackingNumber, setTrackingNumber] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [notFound, setNotFound] = useState(false);
+  const [selected, setSelected] = useState(null);
+
+  const closeModal = useCallback(() => setSelected(null), []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const num = trackingNumber.trim();
+    if (!num || loading) return;
+
+    setLoading(true);
+    setError(null);
+    setNotFound(false);
+    setSelected(null);
+
+    try {
+      const url = `${PARCELS_URL}/search?tracking_number=${encodeURIComponent(num)}`;
+      const res = await fetch(url);
+
+      if (!res.ok) throw new Error(`Server responded ${res.status}`);
+
+      const rows = await res.json();
+
+      if (!Array.isArray(rows) || rows.length === 0) {
+        setNotFound(true);
+        return;
+      }
+
+      setSelected(normalizeParcelRow(rows[0]));
+    } catch (err) {
+      console.error('Track error:', err);
+      setError(err.message || 'Could not reach the tracking service.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="home-page">
+      {/* ============ HERO ============ */}
+      <section className="hero-stage">
+        <div className="hero-grid-overlay" aria-hidden="true" />
+        <div className="hero-glow hero-glow-1" aria-hidden="true" />
+        <div className="hero-glow hero-glow-2" aria-hidden="true" />
+
+        <div className="container hero-inner">
+          <div className="hero-eyebrow reveal d-1">
+            <span className="pulse-dot" />
+            Live tracking · 200+ countries
+          </div>
+
+          <h1 className="hero-title reveal d-2">
+            Track anything
+            <br />
+            <span className="hero-title-accent">moving.</span>
+          </h1>
+
+          <p className="hero-sub reveal d-3">
+            One search box for every parcel, every courier, every corner of the
+            planet. No account. No noise. Just the truth.
+          </p>
+
+          <form onSubmit={handleSubmit} className="hero-search-v2 reveal d-4">
+            <span className="search-icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35" />
+              </svg>
+            </span>
+            <input
+              type="text"
+              placeholder="Enter your tracking number…"
+              value={trackingNumber}
+              onChange={(e) => setTrackingNumber(e.target.value)}
+              disabled={loading}
+            />
+            <button type="submit" disabled={loading}>
+              {loading ? (
+                <>
+                  <span className="track-spinner" aria-hidden="true" />
+                  Tracking…
+                </>
+              ) : (
+                <>
+                  Track
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5 12h14" />
+                    <path d="m12 5 7 7-7 7" />
+                  </svg>
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* Inline error */}
+          {error && !loading && (
+            <div className="hero-feedback hero-feedback-error reveal d-4">
+              <strong>Something went wrong.</strong>
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Not found */}
+          {notFound && !loading && (
+            <div className="hero-feedback reveal d-4">
+              <strong>No parcel found.</strong>
+              <span>
+                We couldn't find <code>{trackingNumber.trim()}</code> in our
+                system. Double-check the number or try again shortly.
+              </span>
+            </div>
+          )}
+
+          <div className="hero-trust reveal d-5">
+            <span>Trusted by</span>
+            <div className="trust-marks">
+              <span>DHL</span>
+              <span>FedEx</span>
+              <span>UPS</span>
+              <span>GIG</span>
+              <span>Kwik</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="hero-marquee" aria-hidden="true">
+          <div className="marquee-track">
+            {[...Array(2)].map((_, i) => (
+              <div className="marquee-group" key={i}>
+                <span>TRACK ·</span>
+                <span>LOCATE ·</span>
+                <span>KNOW ·</span>
+                <span>DELIVER ·</span>
+                <span>ARRIVE ·</span>
+                <span>TRACK ·</span>
+                <span>LOCATE ·</span>
+                <span>KNOW ·</span>
+                <span>DELIVER ·</span>
+                <span>ARRIVE ·</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ============ FEATURES ============ */}
+      <section className="features-stage">
+        <div className="container">
+          <div className="features-head">
+            <div className="eyebrow reveal d-1">Why ParcelTracker</div>
+            <h2 className="reveal d-2">
+              Built different.
+              <br />
+              <span className="muted-em">Feels like it too.</span>
+            </h2>
+          </div>
+
+          <div className="bento-grid">
+            {features.map((f, i) => (
+              <article
+                key={f.title}
+                className={`bento-card bento-${f.span} reveal d-${i + 2}`}
+              >
+                <div
+                  className="bento-bg"
+                  style={{ backgroundImage: `url(${f.img})` }}
+                />
+                <div className="bento-veil" />
+                <div className="bento-content">
+                  <div className="bento-tag">{f.tag}</div>
+                  <h3 className="bento-title">
+                    {f.title.split('\n').map((line, j) => (
+                      <span key={j}>
+                        {line}
+                        {j === 0 && <br />}
+                      </span>
+                    ))}
+                  </h3>
+                  <p className="bento-text">{f.text}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ============ CLOSING STRIP ============ */}
+      <section className="home-cta-strip">
+        <div className="container">
+          <div className="home-cta-inner reveal d-1">
+            <div>
+              <div className="eyebrow" style={{ color: 'var(--accent)' }}>
+                Ready when you are
+              </div>
+              <h2 className="home-cta-title">
+                Paste a number.
+                <br />
+                Know where it is.
+              </h2>
+            </div>
+            <a href="#top" className="btn-accent-lg">
+              Track a Parcel
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12h14" />
+                <path d="m12 5 7 7-7 7" />
+              </svg>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* ============ MODAL ============ */}
+      {selected && <ParcelModal parcel={selected} onClose={closeModal} />}
+
+      {/* Scoped styles for spinner + inline feedback */}
+      <style>{`
+        .track-spinner {
+          width: 14px; height: 14px;
+          border-radius: 50%;
+          border: 2px solid rgba(255,255,255,0.4);
+          border-top-color: #fff;
+          display: inline-block;
+          animation: trackSpin 0.7s linear infinite;
+        }
+        @keyframes trackSpin { to { transform: rotate(360deg); } }
+
+        .hero-feedback {
+          max-width: 560px;
+          margin: 1rem auto 0;
+          padding: 0.9rem 1.1rem;
+          border-radius: 14px;
+          background: rgba(14,14,16,0.04);
+          border: 1px solid rgba(14,14,16,0.08);
+          font-size: 0.85rem;
+          line-height: 1.45;
+          color: #52525B;
+          text-align: left;
+          animation: fbFade 0.3s ease;
+        }
+        .hero-feedback strong {
+          display: block;
+          color: #0E0E10;
+          font-weight: 700;
+          margin-bottom: 0.2rem;
+        }
+        .hero-feedback code {
+          font-family: 'SF Mono', Menlo, Consolas, monospace;
+          background: rgba(14,14,16,0.06);
+          padding: 0.1rem 0.4rem;
+          border-radius: 6px;
+          font-size: 0.8rem;
+          color: #0E0E10;
+        }
+        .hero-feedback-error {
+          background: rgba(239,68,68,0.06);
+          border-color: rgba(239,68,68,0.2);
+          color: #b91c1c;
+        }
+        .hero-feedback-error strong { color: #b91c1c; }
+        @keyframes fbFade {
+          from { opacity: 0; transform: translateY(-4px); }
+          to   { opacity: 1; transform: none; }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+export default Home;
