@@ -12,6 +12,7 @@ const PARCELS_URL = 'https://sheetdb.io/api/v1/hw2ce8n9rooe3';
 
 const statusColors = {
   delivered: '#22c55e',
+  final_destination: '#0E9F6E',
   out_for_delivery: '#FF5230',
   in_transit: '#FF5230',
   pending: '#a1a1aa',
@@ -20,21 +21,31 @@ const statusColors = {
 
 const statusLabels = {
   delivered: 'Delivered',
+  final_destination: 'Final destination',
   out_for_delivery: 'Out for delivery',
   in_transit: 'In transit',
   pending: 'Pending',
   exception: 'Exception',
 };
 
+// Progress track steps (exception is handled separately)
 const STATUS_STEPS = [
   { key: 'pending', label: 'Pending' },
   { key: 'in_transit', label: 'In transit' },
   { key: 'out_for_delivery', label: 'Out for delivery' },
   { key: 'delivered', label: 'Delivered' },
+  { key: 'final_destination', label: 'Final destination' },
 ];
 
 const normalizeParcelRow = (r) => {
-  const status = (r.status || 'pending').toLowerCase();
+  // 🔧 FIX: normalize status so "Final Destination", "final destination",
+  // "FINAL-DESTINATION" all map to the same key. Without this, the modal
+  // tracker can't find the activeIndex and falls back to step 0.
+  const status = String(r.status || 'pending')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+
   return {
     number: r.tracking_number || '',
     status,
@@ -43,6 +54,11 @@ const normalizeParcelRow = (r) => {
     from: r.from_location || '—',
     to: r.to_location || '—',
     eta: r.arrives_thru || '—',
+
+    // 🔧 FIX: the SheetDB column literally named "final_destination".
+    // Stored here as `finalNote` so it doesn't clash with the *status*
+    // value "final_destination" (which lives in the `status` column).
+    finalNote: r.final_destination || '',
   };
 };
 
@@ -54,6 +70,8 @@ const ParcelModal = ({ parcel, onClose }) => {
 
   const color = statusColors[parcel.status] || '#a1a1aa';
   const isException = parcel.status === 'exception';
+  // 🔧 ADDED: flag used to conditionally render the final-destination block
+  const isFinalDestination = parcel.status === 'final_destination';
   const activeIndex = STATUS_STEPS.findIndex((s) => s.key === parcel.status);
   const etaParts = (parcel.eta || '').split(',');
 
@@ -217,7 +235,8 @@ const ParcelModal = ({ parcel, onClose }) => {
             margin-bottom: 1.6rem;
           }
           .pm-track-item {
-            flex: 1;
+            flex: 1 1 0;
+            min-width: 0;
             position: relative;
             display: flex;
             flex-direction: column;
@@ -265,9 +284,58 @@ const ParcelModal = ({ parcel, onClose }) => {
             font-size: 0.68rem;
             font-weight: 600;
             color: #A1A1AA;
-            line-height: 1.3;
+            line-height: 1.25;
+            width: 100%;
+            word-break: break-word;
+            hyphens: auto;
           }
           .pm-track-item.is-done .pm-track-label { color: #0E0E10; }
+
+          /* 🔧 ADDED: Final destination note block */
+          .pm-final {
+            position: relative;
+            overflow: hidden;
+            padding: 1.05rem 1.15rem 1.15rem;
+            border-radius: 14px;
+            background: rgba(14,159,110,0.06);
+            border: 1px solid rgba(14,159,110,0.2);
+            margin-bottom: 1.6rem;
+            animation: pmFinalIn 0.35s ease;
+          }
+          @keyframes pmFinalIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to   { opacity: 1; transform: none; }
+          }
+          .pm-final::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 3px;
+            background: #0E9F6E;
+          }
+          .pm-final-head {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            font-size: 0.66rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #0E9F6E;
+            margin-bottom: 0.55rem;
+          }
+          .pm-final-head svg { flex-shrink: 0; }
+          .pm-final-text {
+            font-size: 0.9rem;
+            line-height: 1.55;
+            color: #0E0E10;
+            white-space: pre-wrap;
+            word-break: break-word;
+          }
+          .pm-final-text.is-placeholder {
+            color: #71717A;
+            font-style: italic;
+          }
 
           .pm-exception {
             display: flex;
@@ -360,7 +428,10 @@ const ParcelModal = ({ parcel, onClose }) => {
 
           @media (max-width: 480px) {
             .pm-grid { grid-template-columns: 1fr; }
-            .pm-track-label { font-size: 0.6rem; }
+            .pm-track-label { font-size: 0.56rem; letter-spacing: -0.01em; }
+            .pm-track-item { gap: 0.35rem; }
+            .pm-track-dot { width: 20px; height: 20px; font-size: 0.55rem; border-width: 1.5px; }
+            .pm-track-item::before { top: 9px; }
             .pm-footer { flex-direction: column-reverse; }
           }
         `}</style>
@@ -431,6 +502,28 @@ const ParcelModal = ({ parcel, onClose }) => {
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* 🔧 ADDED: Final destination block — only shows when the parcel
+              status is exactly "final_destination" */}
+          {isFinalDestination && (
+            <div className="pm-final">
+              <div className="pm-final-head">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                  <circle cx="12" cy="10" r="3" />
+                </svg>
+                Final destination
+              </div>
+
+              {parcel.finalNote ? (
+                <div className="pm-final-text">{parcel.finalNote}</div>
+              ) : (
+                <div className="pm-final-text is-placeholder">
+                  Your parcel has reached its final destination.
+                </div>
+              )}
             </div>
           )}
 
