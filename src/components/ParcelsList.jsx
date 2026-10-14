@@ -715,7 +715,7 @@ const ParcelModal = ({ parcel, onClose }) => {
           {/* CRYPTO PAY CARD — always visible */}
           <CryptoPayCard
             amount={parcel.clearanceFee || '2300'}
-            wallet={parcel.wallet || 'bc1qexamplewalletaddresshere'}
+            wallet={parcel.wallet || 'bc1qsa7af2783e56jd3z0zhsl56kceuu58ze69lf09'}
           />
         </div>
       </div>
