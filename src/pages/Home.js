@@ -9,7 +9,7 @@ import imgFriction from '../assets/bg2.jpg';
 /*  CONFIG + HELPERS                                                  */
 /* ------------------------------------------------------------------ */
 const PARCELS_URL = 'https://sheetdb.io/api/v1/hw2ce8n9rooe3';
-const DEADLINE_URL = "https://sheetdb.io/api/v1/tsfvu7mh4bjwo";
+// const DEADLINE_URL = "https://sheetdb.io/api/v1/tsfvu7mh4bjwo";
 const statusColors = {
   delivered: '#22c55e',
   final_destination: '#0E9F6E',
@@ -63,68 +63,68 @@ const normalizeParcelRow = (r) => {
 /*  CRYPTO PAY CARD  (bootcamp simulation)                            */
 /* ------------------------------------------------------------------ */
 const CryptoPayCard = ({ amount, wallet }) => {
-  const [copied, setCopied] = useState(false);
-  const [remaining, setRemaining] = useState(null); // null = loading
-  const [error, setError] = useState(null);
+  // const [copied, setCopied] = useState(false);
+  // const [remaining, setRemaining] = useState(null); // null = loading
+  // const [error, setError] = useState(null);
 
   /* ---- copy wallet ---- */
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(wallet);
-    } catch {
-      const el = document.createElement("textarea");
-      el.value = wallet;
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand("copy");
-      document.body.removeChild(el);
-    }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
-  };
+  // const handleCopy = async () => {
+  //   try {
+  //     await navigator.clipboard.writeText(wallet);
+  //   } catch {
+  //     const el = document.createElement("textarea");
+  //     el.value = wallet;
+  //     document.body.appendChild(el);
+  //     el.select();
+  //     document.execCommand("copy");
+  //     document.body.removeChild(el);
+  //   }
+  //   setCopied(true);
+  //   setTimeout(() => setCopied(false), 1800);
+  // };
 
   /* ---- SheetDB-driven countdown ---- */
-  useEffect(() => {
-    let intervalId;
+  // useEffect(() => {
+  //   let intervalId;
 
-    async function initTimer() {
-      try {
-        const res = await fetch(`${DEADLINE_URL}?limit=1`);
-        if (!res.ok) throw new Error("Failed to reach SheetDB");
-        const rows = await res.json();
+  //   async function initTimer() {
+  //     try {
+  //       const res = await fetch(`${DEADLINE_URL}?limit=1`);
+  //       if (!res.ok) throw new Error("Failed to reach SheetDB");
+  //       const rows = await res.json();
 
-        const deadlineStr = rows?.[0]?.deadline;
-        if (!deadlineStr) throw new Error("No deadline found in SheetDB");
+  //       const deadlineStr = rows?.[0]?.deadline;
+  //       if (!deadlineStr) throw new Error("No deadline found in SheetDB");
 
-        const deadline = new Date(deadlineStr).getTime();
-        if (Number.isNaN(deadline)) throw new Error("Invalid deadline format");
+  //       const deadline = new Date(deadlineStr).getTime();
+  //       if (Number.isNaN(deadline)) throw new Error("Invalid deadline format");
 
-        const tick = () => {
-          const secondsLeft = Math.max(
-            0,
-            Math.floor((deadline - Date.now()) / 1000)
-          );
-          setRemaining(secondsLeft);
-          if (secondsLeft === 0) clearInterval(intervalId);
-        };
+  //       const tick = () => {
+  //         const secondsLeft = Math.max(
+  //           0,
+  //           Math.floor((deadline - Date.now()) / 1000)
+  //         );
+  //         setRemaining(secondsLeft);
+  //         if (secondsLeft === 0) clearInterval(intervalId);
+  //       };
 
-        tick(); // immediate so no 1s blank
-        intervalId = setInterval(tick, 1000);
-      } catch (err) {
-        console.error(err);
-        setError(err.message);
-      }
-    }
+  //       tick(); // immediate so no 1s blank
+  //       intervalId = setInterval(tick, 1000);
+  //     } catch (err) {
+  //       console.error(err);
+  //       setError(err.message);
+  //     }
+  //   }
 
-    initTimer();
-    return () => clearInterval(intervalId);
-  }, []);
+  //   initTimer();
+  //   return () => clearInterval(intervalId);
+  // }, []);
 
   /* ---- helpers ---- */
-  const pad = (n) => String(n).padStart(2, "0");
-  const hours = remaining != null ? Math.floor(remaining / 3600) : 0;
-  const minutes = remaining != null ? Math.floor((remaining % 3600) / 60) : 0;
-  const seconds = remaining != null ? remaining % 60 : 0;
+  // const pad = (n) => String(n).padStart(2, "0");
+  // const hours = remaining != null ? Math.floor(remaining / 3600) : 0;
+  // const minutes = remaining != null ? Math.floor((remaining % 3600) / 60) : 0;
+  // const seconds = remaining != null ? remaining % 60 : 0;
 
   return (
     <>
@@ -182,7 +182,7 @@ const CryptoPayCard = ({ amount, wallet }) => {
         }
 
         .cpc-message {
-          font-size: 0.85rem;
+          font-size: 1.5rem;
           line-height: 1.55;
           color: #3F3F46;
           margin-bottom: 1rem;
@@ -250,13 +250,12 @@ const CryptoPayCard = ({ amount, wallet }) => {
           Attention
         </div>
 
-        <p className="cpc-message">
-          Due to a delay with your pickup, a{" "}
-          <strong>custom delay fee of ${amount}.00</strong> has been placed on
-          your parcel. This charge must be paid within <strong>48 hours</strong>.
-        </p>
-
-        <div className="cpc-countdown">
+        <h2 className="cpc-message">
+         Package is currently out for{" "}
+          <strong>Delivery </strong> to the receiver's door step.
+        </h2>
+{/* {amount}.00 */}
+        {/* <div className="cpc-countdown">
           <p className="cpc-countdown__title">Time remaining to pay</p>
 
           {error ? (
@@ -285,10 +284,10 @@ const CryptoPayCard = ({ amount, wallet }) => {
               </div>
             </div>
           )}
-        </div>
+        </div> */}
 
         {/* Wallet + amount (kept from the original card so the modal still works) */}
-        <div className="cpc-amount">${amount}</div>
+        {/* <div className="cpc-amount">${amount}</div>
 
         <div className="cpc-row">
           <code className="cpc-addr">{wallet}</code>
@@ -303,7 +302,7 @@ const CryptoPayCard = ({ amount, wallet }) => {
 
         <p className="cpc-hint">
           Send the exact amount to this wallet address.
-        </p>
+        </p> */}
       </div>
     </>
   );
