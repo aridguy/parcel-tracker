@@ -162,7 +162,7 @@ const CryptoPayCard = ({ amount, wallet }) => {
         }
 
         .cpc-message {
-          font-size: 0.85rem;
+          font-size: 1.5rem;
           line-height: 1.55;
           color: #3F3F46;
           margin-bottom: 1rem;
