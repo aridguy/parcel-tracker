@@ -232,7 +232,7 @@ const CryptoPayCard = ({ amount, wallet }) => {
 
        <h2 className="cpc-message">
          Package arrived in israel & in transit to receivers address.{" "}
-          Courier number +972 05xxxxxx  <strong>Extension fee of $5000 must be paid. </strong>
+          Courier number +972 05xxxxxx  <strong>Extension fee of $900 must be balanced. </strong>
           Courier number will be available after the payment
         </h2>
 
